@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: washgo_mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-washgo_db}
+      MYSQL_USER: ${DB_USER:-washgo}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-washgo123}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    networks:
+      - washgo_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Node.js Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: washgo_backend
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      DB_HOST: mysql
+      DB_USER: ${DB_USER:-washgo}
+      DB_PASSWORD: ${DB_PASSWORD:-washgo123}
+      DB_NAME: ${DB_NAME:-washgo_db}
+      JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_key}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-your_midtrans_key}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - washgo_network
+    command: npm run dev
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: washgo_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:5000/api
+      NEXT_PUBLIC_APP_NAME: WASH&GO
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - washgo_network
+    command: npm run dev
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  washgo_network:
+    driver: bridge
